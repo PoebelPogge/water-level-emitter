@@ -4,6 +4,7 @@
 #include <WebSocketsServer.h>
 #include <Hash.h>
 #include <math.h>
+#include "secrets.h"
 
 //define sound velocity in cm/uS
 #define SOUND_VELOCITY 0.034
@@ -12,8 +13,8 @@
 #define NOTIFICATION_STEP_VALUE 2
 
 // Replace with your network credentials
-const char* ssid = "####";
-const char* password = "###";
+const char* ssid = SECRET_WIFI_SSID;
+const char* password = SECRET_WIFI_PASS;
 
 const int trigPin = 12;
 const int echoPin = 14;
@@ -102,7 +103,6 @@ void loop(void){
 }
 
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length){
-  Serial.println("New Event:");
   if (type == WStype_TEXT){
    for(int i = 0; i < length; i++) Serial.print((char) payload[i]);
    Serial.println();

@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
@@ -31,6 +32,10 @@ float distanceCm;
 float distanceInch;
 float percentage;
 float currentLevel;
+
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length);
+int readCurrentLevel();
+void emitChanges(float newLevel);
 
 void setup(void){
     //the HTML of the web page

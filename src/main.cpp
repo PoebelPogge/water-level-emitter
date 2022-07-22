@@ -23,7 +23,12 @@ const int echoPin = 14;
 WebSocketsServer webSocket = WebSocketsServer(81);
 ESP8266WebServer server(80);   //instantiate server at port 80 (http port)
 
+String version = "0.0.1-alpha";
+
 String page = "";
+
+String localIP = "";
+
 int LEDPin = 13;
 
 int stepCounter;
@@ -36,10 +41,12 @@ float currentLevel;
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length);
 int readCurrentLevel();
 void emitChanges(float newLevel);
+void updateHTML(int newLevel);
 
 void setup(void){
     //the HTML of the web page
-    page = "<h1>&#127754 SuperSonic Waterlevel Emitter &#127754</h1><div><p>WaterLevel: </p></div>";
+    //page = "<h1>&#127754 SuperSonic Waterlevel Emitter &#127754</h1><div><p>WaterLevel: </p></div>";
+    updateHTML(0);
     //make the LED pin output and initially turned off
     pinMode(LEDPin, OUTPUT);
     digitalWrite(LEDPin, LOW);
@@ -66,7 +73,8 @@ void setup(void){
     Serial.print("Connected to ");
     Serial.println(ssid);
     Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
+    localIP = WiFi.localIP().toString();
+    Serial.println(localIP);
 
     server.on("/", [](){
         server.send(200, "text/html", page);
@@ -102,6 +110,7 @@ void loop(void){
       Serial.println("Messung");
       int newLevel = readCurrentLevel();
       emitChanges(newLevel);
+      updateHTML((int) newLevel);
       stepCounter = 0;
     }
     stepCounter++;
@@ -143,10 +152,69 @@ int readCurrentLevel(){
 void emitChanges(float newLevel){
     if(newLevel > currentLevel + NOTIFICATION_STEP_VALUE || newLevel < currentLevel - NOTIFICATION_STEP_VALUE){
         currentLevel = newLevel;
-        page = "<h1>&#127754 SuperSonic Waterlevel Emitter &#127754</h1><div><p>WaterLevel: " + String((int) currentLevel) + "% </p></div>";
         String eventMsg = "Event:NewLevel:" + String((int) currentLevel);
         webSocket.broadcastTXT(eventMsg);
         Serial.print("New Value is: ");
         Serial.println(currentLevel);
     }
+}
+
+void updateHTML(int newLevel){
+  String value = "\
+                <!DOCTYPE html>\n\
+                <html>\n\
+                \n\
+                <head>\n\
+                    <link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css\" rel=\"stylesheet\"\n\
+                        integrity=\"sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC\" crossorigin=\"anonymous\">\n\
+                    <title>Smarty42</title>\n\
+                    <style>\n\
+                        body {\n\
+                            background-color: rgb(87, 0, 124);\n\
+                            color: white;\n\
+                        }\n\
+                        \n\
+                        .version {\n\
+                            position: absolute;\n\
+                            bottom: 0;\n\
+                            right: 0;\n\
+                        }\n\
+                    </style>\n\
+                    <script>\n\
+                      let target = \"ws://IPADRESS:81\";\n\
+                      console.log(\"Connecting to: \" + target);\n\
+                      webSocket = new WebSocket(target);\n\
+                      webSocket.onopen = function(event) {\n\
+                        console.log(\"Connection established\");\n\
+                      }\n\
+                      webSocket.onmessage = function (event) {\n\
+                          let message = event.data;\n\
+                          newValue = message.split(\":\")[2];\n\
+                          console.log(\"New level: \" + newValue)\n\
+                          document.getElementById(\"pgbar\").style.width = newValue + \"%\";\n\
+                          document.getElementById(\"pgbar\").innerHTML = newValue + \"%\";\n\
+                      }\n\
+                  </script>\n\
+                </head>\n\
+                \n\
+                <body>\n\
+                    <div class=\"container\">\n\
+                        <div class=\"d-flex flex-column min-vh-100 justify-content-center align-items-center\">\n\
+                            <h1>Smarty42</h1>\n\
+                            <p>Water Level Emitter</p>\n\
+                            <div class=\"progress\" style=\"width: 200px\">\n\
+                                <div id=\"pgbar\" class=\"progress-bar progress-bar-striped progress-bar-animated\" role=\"progressbar\" aria-valuenow=\"LEVEL\" aria-valuemin=\"0\" aria-valuemax=\"100\" style=\"width: LEVEL%\">LEVEL%</div>\n\
+                            </div>\n\
+                        </div>\n\
+                        <div class=\"version\">\n\
+                            Version: VERSION\n\
+                        </div>\n\
+                    </div>\n\
+                </body>\n\
+                </html>\n\
+                ";
+  value.replace("LEVEL", String(newLevel));
+  value.replace("VERSION", String(version));
+  value.replace("IPADRESS",localIP);
+  page = value;
 }

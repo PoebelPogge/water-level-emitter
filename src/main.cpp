@@ -23,7 +23,10 @@ const int echoPin = 14;
 WebSocketsServer webSocket = WebSocketsServer(81);
 ESP8266WebServer server(80);   //instantiate server at port 80 (http port)
 
+String version = "0.0.1";
+
 String page = "";
+String json = "";
 int LEDPin = 13;
 
 int stepCounter;
@@ -36,6 +39,7 @@ float currentLevel;
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length);
 int readCurrentLevel();
 void emitChanges(float newLevel);
+void updateJson(float newLevel);
 
 void setup(void){
     //the HTML of the web page
@@ -72,16 +76,8 @@ void setup(void){
         server.send(200, "text/html", page);
     });
 
-    server.on("/LEDOn", [](){
-        server.send(200, "text/html", page);
-        digitalWrite(LEDPin, HIGH);
-        delay(1000);
-    });
-
-    server.on("/LEDOff", [](){
-        server.send(200, "text/html", page);
-        digitalWrite(LEDPin, LOW);
-        delay(1000);
+    server.on("/json", [](){
+      server.send(200, "application/json", json);
     });
 
     server.begin();
@@ -102,6 +98,7 @@ void loop(void){
       Serial.println("Messung");
       int newLevel = readCurrentLevel();
       emitChanges(newLevel);
+      updateJson(newLevel);
       stepCounter = 0;
     }
     stepCounter++;
@@ -149,4 +146,11 @@ void emitChanges(float newLevel){
         Serial.print("New Value is: ");
         Serial.println(currentLevel);
     }
+}
+
+void updateJson(float newLevel){
+    String value = "{\"deviceId\":\"sadasdas\",\"type\":\"water-level-emitter\",\"level\":LEVEL,\"version\":\"VERSION\"}";
+    value.replace("LEVEL", String(newLevel));
+    value.replace("VERSION", String(version));
+    json = value;
 }

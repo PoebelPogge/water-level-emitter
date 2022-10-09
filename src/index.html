@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+    <title>Smarty42</title>
+    <style>
+        body {
+            background-color: rgb(87, 0, 124);
+            color: white;
+        }
+
+        .version {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+        }
+    </style>
+    <script>
+        let target = "ws://IPADRESS:81";
+        console.log("Connecting to: " + target);
+        webSocket = new WebSocket(target);
+        webSocket.onopen = function (event) {
+            console.log("Connection established");
+        }
+        webSocket.onmessage = function (event) {
+            let message = event.data;
+            newValue = message.split(":")[2];
+            console.log("New level: " + newValue)
+            document.getElementById("pgbar").style.width = newValue + "%";
+            document.getElementById("pgbar").innerHTML = newValue + "%";
+        }
+    </script>
+</head>
+
+<body>
+    <div class="container">
+        <div class="d-flex flex-column min-vh-100 justify-content-center align-items-center">
+            <h1>Smarty42</h1>
+            <p>Water Level Emitter</p>
+            <div class="progress" style="width: 200px">
+                <div id="pgbar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
+                    aria-valuenow="LEVEL" aria-valuemin="0" aria-valuemax="100" style="width: ##LEVEL##%">##LEVEL##%
+                </div>
+            </div>
+        </div>
+        <div class="version">
+            Version: ##VERSION##
+        </div>
+    </div>
+</body>
+
+</html>

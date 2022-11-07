@@ -1,17 +1,18 @@
 #include <Arduino.h>
+#include <EEPROM.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <WebSocketsServer.h>
 #include <MQTT.h>
 #include <Hash.h>
 #include <math.h>
-#include "secrets.h"
+#include "secrets.h" //<- move secrets.h.back to secrets.h and adjust the credentials
 
 // define sound velocity in cm/uS
 #define SOUND_VELOCITY 0.034
-#define MIN_LEVEL 20
-#define MAX_LEVEL 69
 #define NOTIFICATION_STEP_VALUE 2
+#define MIN_VALUE_ADDR 49
+#define MAX_VALUE_ADDR 51
 
 // Replace with your network credentials
 const char *ssid = SECRET_WIFI_SSID;
@@ -34,11 +35,17 @@ float distanceCm;
 float distanceInch;
 float percentage;
 float currentLevel;
+int maxLevel;
+int minLevel;
+
+bool mqttEnabled = false;
 
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length);
 int readCurrentLevel();
 void connectMQTT();
 void emitChanges(float newLevel);
+void writeIntToEEPROM(int addr, int value);
+int readIntFromEEPROM(int addr);
 
 void setup(void)
 {
@@ -72,31 +79,65 @@ void setup(void)
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-  server.on("/", []()
-            { server.send(200, "text/html", page); });
+  server.on("/", []() { 
+    server.send(200, "text/html", page); 
+  });
 
-  server.on("/LEDOn", []()
-            {
-        server.send(200, "text/html", page);
-        digitalWrite(LEDPin, HIGH);
-        delay(1000); });
+  //update max value
+  server.on("/max", HTTP_PUT, []() {
+    if(server.arg("value") != ""){
+      maxLevel = server.arg("value").toInt();
+      writeIntToEEPROM(MAX_VALUE_ADDR, maxLevel);
+      Serial.println("Updated MAX VALUE to: " + maxLevel);
+    }
+  });
 
-  server.on("/LEDOff", []()
-            {
-        server.send(200, "text/html", page);
-        digitalWrite(LEDPin, LOW);
-        delay(1000); });
+  // get max value
+  server.on("/max", HTTP_GET, []() {
+        server.send(200, "application/json", "{\"maxValue\":\"" + String(maxLevel) + "\"}");
+  });
+
+  //update min value
+  server.on("/min", HTTP_PUT, []() {
+    if(server.arg("value") != ""){
+      minLevel = server.arg("value").toInt();
+      writeIntToEEPROM(MIN_VALUE_ADDR, minLevel);
+      Serial.println("Updated MIN VALUE to: " + minLevel);
+    }
+  });
+
+  // get min value
+  server.on("/min", HTTP_GET, []() {
+        server.send(200, "application/json", "{\"minValue\":\"" + String(minLevel) + "\"}");
+  });
+
+  minLevel = readIntFromEEPROM(MIN_VALUE_ADDR);
+  Serial.println("Init MIN LEVEL value: " + minLevel);
+  if(minLevel == 0){
+    Serial.println("Due to 0 value, updated MIN LEVEL value to 20");
+    minLevel = 20;
+  }
+
+  maxLevel = readIntFromEEPROM(MAX_VALUE_ADDR);
+  Serial.println("Init MAX LEVEL value: " + maxLevel);
+  if(maxLevel == 0){
+    Serial.println("Due to 0 value, updated MAX LEVEL value to 69");
+    maxLevel = 69;
+  }
 
   server.begin();
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
 
-  mqttClient.begin("192.168.2.2", net);
-  mqttClient.setWill("water-level-emitter/status", "offline");
+  if(strcmp(MQTT_BROKER_ADDR, "") != 0){
+    mqttClient.begin(MQTT_BROKER_ADDR, net);
+    mqttClient.setWill("water-level-emitter/status", "offline");
 
-  Serial.println("Connecting to MQTT brocker...");
-  connectMQTT();
-  Serial.println("Connection to MQTT brocker established");
+    Serial.println("Connecting to MQTT brocker...");
+    connectMQTT();
+    mqttEnabled = true;
+    Serial.println("Connection to MQTT brocker established");
+  }
 
   Serial.println("Device started!");
 }
@@ -105,7 +146,8 @@ void loop(void)
 {
   webSocket.loop();
   server.handleClient();
-  if(!mqttClient.connected()){
+  if(!mqttClient.connected() && mqttEnabled){
+    Serial.println("MQTT Broker connection lost, reconecting..");
     connectMQTT();
   }
   if (Serial.available() > 0)
@@ -127,7 +169,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length)
 {
   if (type == WStype_TEXT)
   {
-    for (int i = 0; i < length; i++)
+    for (size_t i = 0; i < length; i++)
       Serial.print((char)payload[i]);
     Serial.println();
   }
@@ -159,7 +201,7 @@ int readCurrentLevel()
   // Calculate the distance
   distanceCm = duration * SOUND_VELOCITY / 2;
 
-  percentage = 100 / (MAX_LEVEL - MIN_LEVEL) * (distanceCm - MIN_LEVEL);
+  percentage = 100 / (maxLevel - minLevel) * (distanceCm - minLevel);
   if (percentage <= 0)
   {
     percentage = 0;
@@ -168,7 +210,6 @@ int readCurrentLevel()
   {
     percentage = 100;
   }
-  // delay(1000);
   return percentage;
 }
 
@@ -180,8 +221,19 @@ void emitChanges(float newLevel)
     page = "<h1>&#127754 SuperSonic Waterlevel Emitter &#127754</h1><div><p>WaterLevel: " + String((int)currentLevel) + "% </p></div>";
     String eventMsg = "Event:NewLevel:" + String((int)currentLevel);
     webSocket.broadcastTXT(eventMsg);
-    mqttClient.publish("water-level-emitter/level", String((int) currentLevel));
+    if(mqttEnabled){
+      mqttClient.publish("water-level-emitter/level", String((int) currentLevel));
+    }
     Serial.print("New Value is: ");
     Serial.println(currentLevel);
   }
+}
+
+void writeIntToEEPROM(int addr, int value){
+  EEPROM.write(addr, value >> 8);
+  EEPROM.write(addr + 1, value & 0xFF);
+}
+
+int readIntFromEEPROM(int addr) {
+  return (EEPROM.read(addr) << 8) + EEPROM.read(addr + 1);
 }
